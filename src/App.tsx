@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 /* eslint-disable prettier/prettier */
 /* eslint-disable jsx-a11y/label-has-associated-control */
 /* eslint-disable jsx-a11y/control-has-associated-label */
@@ -8,407 +9,319 @@ import { client } from './utils/fetchClient';
 import { Todo } from './types/Todo';
 
 export const App: React.FC = () => {
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [newTodoTitle, setNewTodoTitle] = useState('');
-  const [loadingAction, setLoadingAction] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
-  const [tempTodo, setTempTodo] = useState<Todo | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setLoadingAction('load');
-    client
-      .get<Todo[]>(`/todos?userId=${USER_ID}`)
-      .then(setTodos)
-      .catch(() => setErrorMessage('Unable to load todos'))
-      .finally(() => setLoadingAction(null));
-  }, []);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [todos, tempTodo]);
-
-  useEffect(() => {
-    if (editingId !== null) {
-      editInputRef.current?.focus();
-    }
-  }, [editingId]);
-
+  // Verifica se tem usuário logado
   if (!USER_ID) {
     return <UserWarning />;
   }
 
-  const handleAddTodo = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedTitle = newTodoTitle.trim();
+  // Estados para gerenciar os todos
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [newTodo, setNewTodo] = useState('');
+  const [loading, setLoading] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [editing, setEditing] = useState<{
+    id: number | null;
+    title: string;
+  }>({ id: null, title: '' });
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const [tempTodo, setTempTodo] = useState<Todo | null>(null);
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const inputRef = useRef<HTMLInputElement>(null);
 
-    if (!trimmedTitle) {
-      setErrorMessage('Title should not be empty');
+  // Busca os todos quando o componente carrega
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    setLoading('carregando');
+    setError('');
+    client.get<Todo[]>(`/todos?userId=${USER_ID}`)
+      .then(data => setTodos(data))
+      .catch(() => setError('Erro ao carregar tarefas'))
+      .finally(() => setLoading(null));
+  }, []);
+
+  // Foca no input quando necessário
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [todos, tempTodo]);
+
+  // Função para adicionar novo todo
+  const addTodo = (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = newTodo.trim();
+
+    if (!title) {
+      setError('Digite uma tarefa');
 
       return;
     }
 
-    const newTempTodo: Todo = {
+    // Cria um todo temporário enquanto carrega
+    const temp = {
       id: 0,
       userId: USER_ID,
-      title: trimmedTitle,
-      completed: false,
+      title,
+      completed: false
     };
 
-    setTempTodo(newTempTodo);
-    setLoadingAction('add');
-    // Não limpar o campo antes da resposta
+    setTempTodo(temp);
+    setLoading('adicionando');
+    setNewTodo('');
 
-    client
-      .post<Todo>('/todos', {
-      userId: USER_ID,
-      title: trimmedTitle,
-      completed: false,
-    })
-      .then(newTodo => {
-        setTodos(prev => [...prev, newTodo]);
-        setNewTodoTitle('');
+    // Envia para o servidor
+    client.post<Todo>('/todos', temp)
+      .then(addedTodo => {
+        setTodos(prev => [...prev, addedTodo]);
       })
       .catch(() => {
-        setErrorMessage('Unable to add a todo');
-        // Não sobrescrever o campo, deixa o usuário decidir
+        setError('Erro ao adicionar tarefa');
+        setNewTodo(title);
       })
       .finally(() => {
         setTempTodo(null);
-        setLoadingAction(null);
-        inputRef.current?.focus();
+        setLoading(null);
       });
   };
 
-  const handleDeleteTodo = (id: number) => {
-    setLoadingAction(`delete-${id}`);
-    client
-      .delete(`/todos/${id}`)
+  // Função para deletar todo
+  const deleteTodo = (id: number) => {
+    setLoading(`deletando-${id}`);
+
+    client.delete(`/todos/${id}`)
       .then(() => {
         setTodos(prev => prev.filter(todo => todo.id !== id));
-        if (editingId === id) {
-          setEditingId(null);
-        }
       })
-      .catch(() => setErrorMessage('Unable to delete a todo'))
-      .finally(() => setLoadingAction(null));
+      .catch(() => setError('Erro ao deletar tarefa'))
+      .finally(() => setLoading(null));
   };
 
-  const handleToggleCompleted = (id: number) => {
-    setLoadingAction(`toggle-${id}`);
-    const foundTodo = todos.find(t => t.id === id);
-
-    if (!foundTodo) {
-      return;
-    }
-
-    client
-      .patch<Todo>(`/todos/${id}`, { completed: !foundTodo.completed })
-      .then(updatedTodo => {
-        setTodos(prev =>
-          prev.map(t =>
-            t.id === id ? { ...t, completed: updatedTodo.completed } : t,
-          ),
-        );
-      })
-      .catch(() => setErrorMessage('Unable to update todo'))
-      .finally(() => setLoadingAction(null));
-  };
-
-  const startEditing = (todo: Todo) => {
-    setEditingId(todo.id);
-    setEditingTitle(todo.title);
-  };
-
-  const cancelEditing = () => {
-    setEditingId(null);
-    setEditingTitle('');
-  };
-
-  const saveEditing = (id: number) => {
-    const trimmedTitle = editingTitle.trim();
+  // Função para marcar/desmarcar como completo
+  const toggleComplete = (id: number) => {
+    setLoading(`completando-${id}`);
     const todo = todos.find(t => t.id === id);
 
     if (!todo) {
       return;
     }
 
-    if (trimmedTitle === todo.title) {
-      cancelEditing();
-
-      return;
-    }
-
-    if (!trimmedTitle) {
-      handleDeleteTodo(id);
-
-      return;
-    }
-
-    setLoadingAction(`edit-${id}`);
-    client
-      .patch<Todo>(`/todos/${id}`, { title: trimmedTitle })
-      .then(updatedTodo => {
-        setTodos(prev =>
-          prev.map(t =>
-            t.id === id ? { ...t, title: updatedTodo.title } : t,
-          ),
-        );
-        cancelEditing();
+    client.patch<Todo>(`/todos/${id}`, { completed: !todo.completed })
+      .then((updated) => {
+        setTodos(prev => prev.map(t =>
+          t.id === id ? updated : t
+        ));
       })
-      .catch(() => setErrorMessage('Unable to update todo'))
-      .finally(() => setLoadingAction(null));
+      .catch(() => setError('Erro ao atualizar tarefa'))
+      .finally(() => setLoading(null));
   };
 
-  const handleKeyUp = (e: React.KeyboardEvent, id: number) => {
-    if (e.key === 'Escape') {
-      cancelEditing();
-    } else if (e.key === 'Enter') {
-      saveEditing(id);
+  // Função para editar todo
+  const editTodo = (id: number) => {
+    const title = editing.title.trim();
+
+    if (!title) {
+      setError('Digite um título válido');
+
+      return;
     }
+
+    setLoading(`editando-${id}`);
+
+    client.patch<Todo>(`/todos/${id}`, {title})
+      .then(updated => {
+        setTodos(prev => prev.map(t =>
+          t.id === id ? updated : t
+        ));
+        setEditing({id: null, title: ''});
+      })
+      .catch(() => setError('Erro ao editar tarefa'))
+      .finally(() => setLoading(null));
   };
 
-  const activeTodosCount = todos.filter(todo => !todo.completed).length;
-  const hasCompletedTodos = todos.some(todo => todo.completed);
-  const allCompleted = todos.length > 0 && todos.every(todo => todo.completed);
+  // Função para marcar/desmarcar todos
+  const toggleAll = () => {
+    const allCompleted = todos.every(t => t.completed);
+    const newStatus = !allCompleted;
 
+    setLoading('completando-todos');
+
+    Promise.all(
+      todos.map(todo =>
+        client.patch(`/todos/${todo.id}`, {completed: newStatus})
+      )
+    )
+      .then(() => {
+        setTodos(prev => prev.map(t => ({...t, completed: newStatus})));
+      })
+      .catch(() => setError('Erro ao atualizar tarefas'))
+      .finally(() => setLoading(null));
+  };
+
+  // Função para limpar completos
   const clearCompleted = () => {
-    setLoadingAction('clear');
+    setLoading('limpando');
+    const completed = todos.filter(t => t.completed);
+
     Promise.all(
-      todos
-        .filter(todo => todo.completed)
-        .map(todo => client.delete(`/todos/${todo.id}`)),
+      completed.map(t => client.delete(`/todos/${t.id}`))
     )
       .then(() => {
-        setTodos(prev => prev.filter(todo => !todo.completed));
+        setTodos(prev => prev.filter(t => !t.completed));
       })
-      .catch(() => setErrorMessage('Unable to clear completed todos'))
-      .finally(() => setLoadingAction(null));
+      .catch(() => setError('Erro ao limpar tarefas'))
+      .finally(() => setLoading(null));
   };
 
-  const handleToggleAll = () => {
-    const shouldCompleteAll = !allCompleted;
-    const todosToUpdate = shouldCompleteAll
-      ? todos.filter(todo => !todo.completed)
-      : todos;
-
-    if (todosToUpdate.length === 0) {
-      return;
+  // Filtra os todos
+  const filteredTodos = todos.filter(todo => {
+    if (filter === 'active') {
+      return !todo.completed;
     }
 
-    setLoadingAction('toggle-all');
-    Promise.all(
-      todosToUpdate.map(todo =>
-        client.patch(`/todos/${todo.id}`, { completed: shouldCompleteAll }),
-      ),
-    )
-      .then(() => {
-        setTodos(prev =>
-          prev.map(todo => ({
-            ...todo,
-            completed: shouldCompleteAll,
-          })),
-        );
-      })
-      .catch(() => setErrorMessage('Unable to toggle all todos'))
-      .finally(() => setLoadingAction(null));
-  };
-
-  const getFilteredTodos = () => {
-    switch (filter) {
-      case 'active':
-        return todos.filter(todo => !todo.completed);
-      case 'completed':
-        return todos.filter(todo => todo.completed);
-      default:
-        return todos;
+    if (filter === 'completed') {
+      return todo.completed;
     }
-  };
+
+    return true;
+  });
+
+  // Conta tarefas ativas
+  const activeCount = todos.filter(t => !t.completed).length;
+  const hasCompleted = todos.some(t => t.completed);
 
   return (
     <div className="todoapp">
       <h1 className="todoapp__title">todos</h1>
 
       <div className="todoapp__content">
+        {/* Cabeçalho com input */}
         <header className="todoapp__header">
           <button
             type="button"
-            className={`todoapp__toggle-all ${allCompleted ? 'active' : ''}`}
-            data-cy="ToggleAllButton"
-            onClick={handleToggleAll}
-            disabled={loadingAction === 'toggle-all'}
-            aria-label="Toggle all todos"
+            className={`todoapp__toggle-all ${activeCount === 0 ? 'active' : ''}`}
+            onClick={toggleAll}
+            disabled={loading === 'completando-todos'}
+            aria-label="Completar todos"
           />
 
-          <form onSubmit={handleAddTodo}>
+          <form onSubmit={addTodo}>
             <input
               ref={inputRef}
-              data-cy="NewTodoField"
               type="text"
               className="todoapp__new-todo"
-              placeholder="What needs to be done?"
-              value={newTodoTitle}
-              onChange={e => setNewTodoTitle(e.target.value)}
-              disabled={loadingAction === 'add' || loadingAction === 'load'}
-              aria-label="New todo title"
+              placeholder="O que precisa ser feito?"
+              value={newTodo}
+              onChange={(e) => setNewTodo(e.target.value)}
+              disabled={!!loading}
             />
           </form>
         </header>
 
-        <section className="todoapp__main" data-cy="TodoList">
-          <ul className="todo-list">
-            {getFilteredTodos().map(todo => (
-              <li
-                key={todo.id}
-                data-cy="Todo"
-                className={`todo ${todo.completed ? 'completed' : ''}`}
-              >
-                {editingId === todo.id ? (
-                  <form
-                    onSubmit={e => {
-                      e.preventDefault();
-                      if (
-                        loadingAction?.startsWith('edit-') ||
-                        loadingAction === `delete-${todo.id}` ||
-                        loadingAction === `toggle-${todo.id}`
-                      ) {
-                        return;
-                      }
+        {/* Lista de todos */}
+        <section className="todoapp__main">
+          {filteredTodos.map(todo => (
+            <div
+              key={todo.id}
+              className={`todo ${todo.completed ? 'completed' : ''}`}
+            >
+              <div className="todo__status">
+                <input
+                  type="checkbox"
+                  checked={todo.completed}
+                  onChange={() => toggleComplete(todo.id)}
+                  disabled={loading === `completando-${todo.id}`}
+                />
+              </div>
 
-                      saveEditing(todo.id);
-                    }}
-                  >
-                    <input
-                      ref={editInputRef}
-                      type="text"
-                      className="todo__title-field"
-                      value={editingTitle}
-                      onChange={e => setEditingTitle(e.target.value)}
-                      onBlur={() => {
-                        if (
-                          !loadingAction?.startsWith('edit-') &&
-                          loadingAction !== `delete-${todo.id}` &&
-                          loadingAction !== `toggle-${todo.id}`
-                        ) {
-                          saveEditing(todo.id);
-                        }
-                      }}
-                      onKeyUp={e => handleKeyUp(e, todo.id)}
-                      autoFocus
-                      aria-label="Edit todo title"
-                      disabled={
-                        loadingAction?.startsWith('edit-') ||
-                        loadingAction === `delete-${todo.id}` ||
-                        loadingAction === `toggle-${todo.id}`
-                      }
-                    />
-                  </form>
-                ) : (
-                  <>
-                    <label
-                      className="todo__status-label"
-                      htmlFor={`todo-checkbox-${todo.id}`}
-                    >
-                      <input
-                        id={`todo-checkbox-${todo.id}`}
-                        type="checkbox"
-                        className="todo__status"
-                        checked={todo.completed}
-                        onChange={() => handleToggleCompleted(todo.id)}
-                        disabled={loadingAction === `toggle-${todo.id}`}
-                      />
-                    </label>
-                    <span
-                      className="todo__title"
-                      onDoubleClick={() => {
-                        if (
-                          editingId === null &&
-                          loadingAction === null
-                        ) {
-                          startEditing(todo);
-                        }
-                      }}
-                    >
-                      {todo.title}
-                    </span>
-                    {loadingAction === `toggle-${todo.id}` && (
-                      <div className="modal overlay is-active">
-                        <div
-                          className="modal-background has-background-white-ter"
-                        />
-                        <div className="loader" />
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {editingId !== todo.id && (
-                  <button
-                    type="button"
-                    className="todo__remove"
-                    onClick={() => handleDeleteTodo(todo.id)}
-                    disabled={
-                      loadingAction === `delete-${todo.id}` ||
-                      editingId === todo.id
+              {editing.id === todo.id ? (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  editTodo(todo.id);
+                }}>
+                  <input
+                    type="text"
+                    value={editing.title}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        title: e.target.value,
+                      })
                     }
-                    aria-label={`Delete ${todo.title}`}
-                  >
-                    ×
-                  </button>
-                )}
-              </li>
-            ))}
+                    onBlur={() => editTodo(todo.id)}
+                    autoFocus
+                  />
+                </form>
+              ) : (
+                <span
+                  className="todo__title"
+                  onDoubleClick={() =>
+                    setEditing({
+                      id: todo.id,
+                      title: todo.title,
+                    })
+                  }
+                >
+                  {todo.title}
+                </span>
+              )}
 
-            {tempTodo && (
-              <li data-cy="Todo" className="todo">
-                <span className="todo__title">{tempTodo.title}</span>
-                <div className="modal overlay is-active">
-                  <div className="modal-background has-background-white-ter" />
-                  <div className="loader" />
-                </div>
-              </li>
-            )}
-          </ul>
+              <button
+                className="todo__remove"
+                onClick={() => deleteTodo(todo.id)}
+                disabled={loading === `deletando-${todo.id}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+
+          {/* Todo temporário durante carregamento */}
+          {tempTodo && (
+            <div className="todo">
+              <div className="todo__status">
+                <input type="checkbox" checked={false} disabled />
+              </div>
+              <div className="todo__title">{tempTodo.title}</div>
+              <div className="loading-overlay">
+                <div className="loading-spinner" />
+              </div>
+            </div>
+          )}
         </section>
 
+        {/* Rodapé com filtros */}
         {todos.length > 0 && (
           <footer className="todoapp__footer">
-            <span className="todo-count">{activeTodosCount} items left</span>
+            <span>{activeCount} itens restantes</span>
 
-            <nav className="filter">
-              <a
-                href="#/"
-                className={`filter__link ${filter === 'all' ? 'selected' : ''}`}
+            <div className="filters">
+              <button
+                className={`filter__link${filter === 'all' ? ' selected' : ''}`}
                 onClick={() => setFilter('all')}
               >
                 All
-              </a>
-              <a
-                href="#/active"
-                className={`filter__link ${filter === 'active' ? 'selected' : ''}`}
+              </button>
+              <button
+                className={`filter__link${filter === 'completed' ? ' selected' : ''}`}
                 onClick={() => setFilter('active')}
               >
                 Active
-              </a>
-              <a
-                href="#/completed"
-                className={`filter__link ${filter === 'completed' ? 'selected' : ''}`}
+              </button>
+              <button
+                className={filter === 'completed' ? 'selected' : ''}
                 onClick={() => setFilter('completed')}
               >
                 Completed
-              </a>
-            </nav>
+              </button>
+            </div>
 
-            {hasCompletedTodos && (
+            {hasCompleted && (
               <button
-                type="button"
                 className="todoapp__clear-completed"
                 onClick={clearCompleted}
-                aria-label="Clear completed todos"
+                disabled={loading === 'limpando'}
               >
                 Clear completed
               </button>
@@ -417,19 +330,11 @@ export const App: React.FC = () => {
         )}
       </div>
 
-      {errorMessage && (
-        <div
-          className="notification is-danger is-light has-text-weight-normal"
-          role="alert"
-          data-cy="ErrorNotification"
-        >
-          <button
-            type="button"
-            className="delete"
-            onClick={() => setErrorMessage('')}
-            aria-label="Close error message"
-          />
-          {errorMessage}
+      {/* Mensagem de erro */}
+      {error && (
+        <div className="error-message">
+          <span>{error}</span>
+          <button onClick={() => setError('')}>×</button>
         </div>
       )}
     </div>

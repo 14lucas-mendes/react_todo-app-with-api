@@ -25,7 +25,17 @@
   }
 
   &__status {
-    opacity: 0;
+    input[type='checkbox'] {
+      opacity: 0;
+      width: 40px;
+      height: 40px;
+      margin: 0;
+      position: absolute;
+      left: 0;
+      top: 0;
+      z-index: 2;
+      cursor: pointer;
+    }
   }
 
   &__title {
@@ -72,9 +82,6 @@
 
   &__title-field {
     width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    box-sizing: border-box;
     padding: 11px 14px;
 
     font-size: inherit;
